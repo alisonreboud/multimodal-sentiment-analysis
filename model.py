@@ -9,9 +9,12 @@ class LSTM_Model():
         if unimodal:
             self.input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], input_shape[1]))
         else:
-            self.a_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], a_dim))
-            self.v_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], v_dim))
-            self.t_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], t_dim))
+            self.a_input = self.v_input = self.t_input = None
+
+            if(a_dim): self.a_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], a_dim))
+            if(v_dim): self.v_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], v_dim))
+            if(t_dim): self.t_input = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0], t_dim))
+
         self.emotions = emotions
         self.mask = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0]))
         self.seq_len = tf.placeholder(tf.int32, [None, ], name="seq_len")
@@ -92,11 +95,13 @@ class LSTM_Model():
         :return:
         """
 
-        inputs_a = tf.expand_dims(inputs_a, axis=1)
-        inputs_v = tf.expand_dims(inputs_v, axis=1)
-        inputs_t = tf.expand_dims(inputs_t, axis=1)
+        if (inputs_a): inputs_a = tf.expand_dims(inputs_a, axis=1)
+        if (inputs_v): inputs_v = tf.expand_dims(inputs_v, axis=1)
+        if (inputs_t): inputs_t = tf.expand_dims(inputs_t, axis=1)
         # inputs = (B, 3, T, dim)
-        inputs = tf.concat([inputs_a, inputs_v, inputs_t], axis=1)
+
+        tensors = [inputs_a, inputs_v, inputs_t]
+        inputs = tf.concat(list(filter(None, tensors)), axis=1)
         t = inputs.get_shape()[2].value
         share_param = True
         hidden_size = inputs.shape[-1].value  # D value - hidden size of the RNN layer
@@ -249,7 +254,9 @@ class LSTM_Model():
                 input = self.self_attention(self.a_input, self.v_input, self.t_input, '')
                 input = input * tf.expand_dims(self.mask, axis=-1)
             else:
-                input = tf.concat([self.a_input, self.v_input, self.t_input], axis=-1)
+                tensors = [self.a_input, self.v_input, self.t_input]
+                tensors = [t for t in tensors if t is not None]
+                input = tf.concat(tensors, axis=-1)
 
         # input = tf.nn.dropout(input, 1-self.lstm_inp_dropout)
         self.gru_output = self.BiGRU(input, 100, 'gru', 1 - self.lstm_dropout)

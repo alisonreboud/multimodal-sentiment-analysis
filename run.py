@@ -29,22 +29,45 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
         train_data, test_data, audio_train, audio_test, text_train, text_test, video_train, video_test, train_label, test_label, seqlen_train, seqlen_test, train_mask, test_mask = get_raw_data(
             data, classes)
 
+        a_dim = audio_train.shape[-1]
+        v_dim = video_train.shape[-1]
+        t_dim = text_train.shape[-1]
+
     else:
         print("starting multimodal")
         # Fusion (appending) of features
 
-        text_train = unimodal_activations['text_train']
-        audio_train = unimodal_activations['audio_train']
-        video_train = unimodal_activations['video_train']
-
-        text_test = unimodal_activations['text_test']
-        audio_test = unimodal_activations['audio_test']
-        video_test = unimodal_activations['video_test']
-
         train_mask = unimodal_activations['train_mask']
         test_mask = unimodal_activations['test_mask']
-
         print('train_mask', train_mask.shape)
+
+
+        array_default = np.empty((train_mask.shape[0], train_mask.shape[1], 100))
+        t_dim = a_dim = v_dim = None #initializing the dims
+
+        if ('text_train' in unimodal_activations):
+            text_train = unimodal_activations['text_train']
+            text_test = unimodal_activations['text_test']
+            t_dim = text_train.shape[-1]
+        else:
+            text_train = array_default
+            text_test = array_default
+
+        if ('audio_train' in unimodal_activations):
+            audio_train = unimodal_activations['audio_train']
+            audio_test = unimodal_activations['audio_test']
+            a_dim = audio_train.shape[-1]
+        else:
+            audio_train = array_default
+            audio_test = array_default
+
+        if ('video_train' in unimodal_activations):
+            video_train = unimodal_activations['video_train']
+            video_test = unimodal_activations['video_test']
+            v_dim = video_train.shape[-1]
+        else:
+            video_train = array_default
+            video_test = array_default
 
         train_label = unimodal_activations['train_label']
         print('train_label', train_label.shape)
@@ -57,9 +80,6 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
         seqlen_test = np.sum(test_mask, axis=-1)
         print('seqlen_test', seqlen_test.shape)
 
-    a_dim = audio_train.shape[-1]
-    v_dim = video_train.shape[-1]
-    t_dim = text_train.shape[-1]
     if attn_fusion:
         print('With attention fusion')
     allow_soft_placement = True
@@ -90,9 +110,6 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                 sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
 
                 test_feed_dict = {
-                    model.t_input: text_test,
-                    model.a_input: audio_test,
-                    model.v_input: video_test,
                     model.y: test_label,
                     model.seq_len: seqlen_test,
                     model.mask: test_mask,
@@ -101,6 +118,10 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                     model.dropout: 0.0,
                     model.dropout_lstm_out: 0.0
                 }
+
+                if t_dim: test_feed_dict.update({model.t_input: text_test})
+                if a_dim: test_feed_dict.update({model.a_input: audio_test})
+                if v_dim: test_feed_dict.update({model.v_input: video_test})
 
                 # print('\n\nDataset: %s' % (data))
                 print("\nEvaluation before training:")
@@ -125,10 +146,13 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                         b_text_train, b_audio_train, b_video_train, b_train_mask, b_seqlen_train, b_train_label = zip(
                             *batch)
                         # print('batch_hist_v', len(batch_utt_v))
-                        feed_dict = {
-                            model.t_input: b_text_train,
-                            model.a_input: b_audio_train,
-                            model.v_input: b_video_train,
+                        feed_dict = {}
+
+                        if t_dim: feed_dict.update({model.t_input: b_text_train})
+                        if a_dim: feed_dict.update({model.a_input: b_audio_train})
+                        if v_dim: feed_dict.update({model.v_input: b_video_train})
+
+                        feed_dict.update({
                             model.y: b_train_label,
                             model.seq_len: b_seqlen_train,
                             model.mask: b_train_mask,
@@ -136,7 +160,7 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                             model.lstm_inp_dropout: 0.0,
                             model.dropout: 0.2,
                             model.dropout_lstm_out: 0.2
-                        }
+                        })
 
                         _, step, loss, accuracy = sess.run(
                             [model.train_op, model.global_step, model.loss, model.accuracy],
@@ -368,6 +392,7 @@ if __name__ == "__main__":
     argv = sys.argv[1:]
     parser = argparse.ArgumentParser()
     parser.add_argument("--unimodal", type=str2bool, nargs='?', const=True, default=True)
+    parser.add_argument("--mode", type=str,nargs='*',default=['text', 'audio', 'video'])
     parser.add_argument("--fusion", type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument("--attention_2", type=str2bool, nargs='?', const=True, default=False)
     parser.add_argument("--use_raw", type=str2bool, nargs='?', const=True, default=False)
@@ -384,7 +409,8 @@ if __name__ == "__main__":
 
     if args.unimodal:
         print("Training unimodals first")
-        modality = ['text', 'audio', 'video']
+        # modality = ['text', 'audio', 'video']
+        modality = args.mode
         for mode in modality:
             unimodal(mode, args.data, args.classes)
 
