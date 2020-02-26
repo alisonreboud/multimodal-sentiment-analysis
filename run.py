@@ -2,6 +2,7 @@ import argparse
 import pickle
 import sys
 
+
 import numpy as np
 
 from data_prep import batch_iter, createOneHotMosei2way, get_raw_data, createOneHot
@@ -10,6 +11,7 @@ seed = 1234
 
 np.random.seed(seed)
 import tensorflow as tf
+tf.enable_eager_execution()
 from tqdm import tqdm
 
 from model import LSTM_Model
@@ -237,6 +239,25 @@ def unimodal(mode, data, classes):
         elif mode == 'video':
             train_data = video_train
             test_data = video_test
+    elif data =='cognimuse':
+        maxlen=368
+        train_data= pickle.load(open("X_train_np.pkl", "rb")).numpy()
+        train_label = pickle.load(open("Y_train_np.pkl", "rb")).numpy()
+        test_data = pickle.load(open("X_test_np.pkl", "rb")).numpy()
+        test_label = pickle.load(open("Y_test_np.pkl", "rb")).numpy()
+        train_length= pickle.load(open("train_length.pkl", "rb"))
+        test_length= pickle.load(open("test_length.pkl", "rb"))
+        #train_label = train_label.astype('int')
+        #test_label = test_label.astype('int')
+        train_mask = np.zeros((train_data.shape[0], train_data.shape[1]), dtype='float')
+        for i in range(len(train_length)):
+            train_mask[i, :train_length[i]] = 1.0
+
+        test_mask = np.zeros((test_data.shape[0], test_data.shape[1]), dtype='float')
+        for i in range(len(test_length)):
+            test_mask[i, :test_length[i]] = 1.0
+
+
 
     # train_label, test_label = createOneHotMosei3way(train_label, test_label)
 
@@ -405,7 +426,7 @@ if __name__ == "__main__":
     batch_size = 20
     epochs = 100
     emotions = args.classes
-    assert args.data in ['mosi', 'mosei', 'iemocap']
+    assert args.data in ['mosi', 'mosei', 'iemocap','cognimuse']
 
     if args.unimodal:
         print("Training unimodals first")
