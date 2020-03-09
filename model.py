@@ -2,6 +2,7 @@ import tensorflow as tf
 
 from tensorflow.python.layers.core import Dense
 
+import numpy as np
 
 class LSTM_Model():
     def __init__(self, input_shape, lr, a_dim, v_dim, t_dim, emotions, attn_fusion=True, unimodal=False,
@@ -18,7 +19,7 @@ class LSTM_Model():
         self.emotions = emotions
         self.mask = tf.placeholder(dtype=tf.float32, shape=(None, input_shape[0]))
         self.seq_len = tf.placeholder(tf.int32, [None, ], name="seq_len")
-        self.y = tf.placeholder(tf.int32, [None, input_shape[0], self.emotions], name="y")
+        self.y = tf.placeholder(tf.float32, [None, input_shape[0], self.emotions], name="y")
         self.lr = lr
         self.seed = seed
         self.attn_fusion = attn_fusion
@@ -259,7 +260,7 @@ class LSTM_Model():
                 input = tf.concat(tensors, axis=-1)
 
         # input = tf.nn.dropout(input, 1-self.lstm_inp_dropout)
-        self.gru_output = self.BiGRU(input, 100, 'gru', 1 - self.lstm_dropout)
+        self.gru_output = self.BiGRU(input, 200, 'gru', 1 - self.lstm_dropout)
         self.inter = tf.nn.dropout(self.gru_output, 1 - self.dropout_lstm_out)
         # self.inter = self.gru_output
         if self.attn_2:
@@ -295,9 +296,20 @@ class LSTM_Model():
         # To calculate accuracy we want to divide by the number of non-padded time-steps,
         # rather than taking the mean
         self.accuracy = tf.reduce_sum(tf.cast(correct, tf.float32)) / tf.reduce_sum(tf.cast(self.seq_len, tf.float32))
+
+        self.f1=tf.contrib.metrics.f1_score(tf.argmax(self.y, -1, output_type=tf.int32),tf.argmax(self.preds, -1, output_type=tf.int32),weights=tf.cast(self.mask, tf.int32))
+        #self.f1 = tfa.metrics.F1Score(tf.argmax(self.y, -1, output_type=tf.int32),tf.argmax(self.preds, -1, output_type=tf.int32),weights=tf.cast(self.mask, tf.int32),average="weighted")
+
+        """self.f1 = f1_score(np.ndarray.flatten(tf.argmax(self.y, -1, output_type=tf.int32).eval()),
+                      np.ndarray.flatten(tf.argmax(self.preds, -1, output_type=tf.int32).eval()),
+                      sample_weight=np.ndarray.flatten(tf.cast(self.mask, tf.int32).eval()), average="weighted")"""
+
         # y = tf.argmax(self.y, -1)
 
         loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.output, labels=self.y)
+        #loss= tf.compat.v1.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.y)
+        #loss=tf.compat.v1.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output, labels=self.y)
+
         loss = loss * self.mask
 
         self.loss = tf.reduce_sum(loss) / tf.reduce_sum(self.mask)

@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from model import LSTM_Model
 
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score , roc_auc_score
 
 tf.set_random_seed(seed)
 
@@ -130,6 +130,7 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                 # Evaluation after epoch
                 step, loss, accuracy = sess.run(
                     [model.global_step, model.loss, model.accuracy],
+                    #[model.global_step, model.loss, model.f1],
                     test_feed_dict)
                 print("EVAL: epoch {}: step {}, loss {:g}, acc {:g}".format(0, step, loss, accuracy))
 
@@ -178,7 +179,11 @@ def multimodal(unimodal_activations, data, classes, attn_fusion=True, enable_att
                     f1 = f1_score(np.ndarray.flatten(tf.argmax(y, -1, output_type=tf.int32).eval()),
                                   np.ndarray.flatten(tf.argmax(preds, -1, output_type=tf.int32).eval()),
                                   sample_weight=np.ndarray.flatten(tf.cast(mask, tf.int32).eval()), average="weighted")
-                    print("EVAL: After epoch {}: step {}, loss {:g}, acc {:g}, f1 {:g}".format(epoch, step,
+
+
+
+
+                    print("EVAL: After epoch {}: step {}, loss {:g}, acc {:g}, f1 {:g}}".format(epoch, step,
                                                                                                loss / test_label.shape[
                                                                                                    0],
                                                                                                accuracy, f1))
@@ -282,6 +287,7 @@ def unimodal(mode, data, classes):
         gpu_options=tf.GPUOptions(allow_growth=True))
     gpu_device = 0
     best_acc = 0
+    best_f1=0
     best_epoch = 0
     best_loss = 1000000.0
     best_epoch_loss = 0
@@ -292,7 +298,7 @@ def unimodal(mode, data, classes):
             tf.set_random_seed(seed)
             sess = tf.Session(config=session_conf)
             with sess.as_default():
-                model = LSTM_Model(train_data.shape[1:], 0.0001, a_dim=0, v_dim=0, t_dim=0, emotions=classes,
+                model = LSTM_Model(train_data.shape[1:], 0.003, a_dim=0, v_dim=0, t_dim=0, emotions=classes,
                                    attn_fusion=attn_fusion, unimodal=is_unimodal, seed=seed)
                 sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
 
@@ -312,23 +318,27 @@ def unimodal(mode, data, classes):
                     model.y: train_label,
                     model.seq_len: seqlen_train,
                     model.mask: train_mask,
-                    model.lstm_dropout: 0.0,
+                    model.lstm_dropout: 0.4,
                     model.lstm_inp_dropout: 0.0,
-                    model.dropout: 0.0,
-                    model.dropout_lstm_out: 0.0
+                    model.dropout: 0.2,
+                    model.dropout_lstm_out: 0.2}
 
-                }
+
                 # print('\n\nDataset: %s' % (data))
                 print("\nEvaluation before training:")
                 # Evaluation after epoch
+
                 step, loss, accuracy = sess.run(
                     [model.global_step, model.loss, model.accuracy],
+                    #model.global_step, model.loss, model.f1],
                     test_feed_dict)
-                print("EVAL: epoch {}: step {}, loss {:g}, acc {:g}".format(0, step, loss, accuracy))
+                print(accuracy)
+                #accuracy=accuracy[0]
+                #print("EVAL: epoch {}: step {}, loss {:g}, acc {:g}".format(0, step, loss, accuracy))
 
                 for epoch in range(epochs):
                     epoch += 1
-
+                    print(len(train_data))
                     batches = batch_iter(list(
                         zip(train_data, train_mask, seqlen_train, train_label)),
                         batch_size)
@@ -354,26 +364,46 @@ def unimodal(mode, data, classes):
 
                         _, step, loss, accuracy = sess.run(
                             [model.train_op, model.global_step, model.loss, model.accuracy],
+                            #[model.train_op, model.global_step, model.loss, model.f1],
                             feed_dict)
+                        #accuracy=accuracy[0]
                         l.append(loss)
                         a.append(accuracy)
 
                     print("\t \tEpoch {}:, loss {:g}, accuracy {:g}".format(epoch, np.average(l), np.average(a)))
                     # Evaluation after epoch
-                    step, loss, accuracy, test_activations = sess.run(
-                        [model.global_step, model.loss, model.accuracy, model.inter1],
+                    #step, loss, accuracy, preds, y, mask = sess.run(
+                        #[model.global_step, model.loss, model.accuracy, model.preds, model.y, model.mask],
+                        #test_feed_dict)
+                    step, loss, accuracy, test_activations,preds,y,mask = sess.run(
+                        [model.global_step, model.loss, model.accuracy, model.inter1,model.preds,model.y,model.mask],
+                        #[model.global_step, model.loss, model.f1, model.inter1],
                         test_feed_dict)
+                    #accuracy=accuracy[0]
                     loss = loss / test_label.shape[0]
-                    print("EVAL: After epoch {}: step {}, loss {:g}, acc {:g}".format(epoch, step, loss, accuracy))
+                    f1 = f1_score(np.ndarray.flatten(tf.argmax(y, -1, output_type=tf.int32).eval()),
+                                  np.ndarray.flatten(tf.argmax(preds, -1, output_type=tf.int32).eval()),
+                                  sample_weight=np.ndarray.flatten(tf.cast(mask, tf.int32).eval()), average="weighted")
+                    auc=roc_auc_score(np.ndarray.flatten(tf.argmax(y, -1, output_type=tf.int32).eval()),
+                                  np.ndarray.flatten(tf.argmax(preds, -1, output_type=tf.int32).eval()),
+                                  sample_weight=np.ndarray.flatten(tf.cast(mask, tf.int32).eval()), average="weighted")
+                    print("EVAL: After epoch {}: step {}, loss {:g}, acc {:g},f1 {:g},auc {:g}".format(epoch, step, loss,
+                                                                                              accuracy, f1,auc))
 
                     if accuracy > best_acc:
-                        best_epoch = epoch
+                        #best_epoch = epoch
                         best_acc = accuracy
+
+                    if f1 > best_f1:
+                        best_epoch = epoch
+                        best_f1 = f1
 
                     if epoch == 30:
                         step, loss, accuracy, train_activations = sess.run(
                             [model.global_step, model.loss, model.accuracy, model.inter1],
+                            #[model.global_step, model.loss, model.f1, model.inter1],
                             train_feed_dict)
+                        #accuracy=accuracy[0]
                         unimodal_activations[mode + '_train'] = train_activations
                         unimodal_activations[mode + '_test'] = test_activations
 
@@ -398,6 +428,7 @@ def unimodal(mode, data, classes):
 
                 print("\n\nBest epoch: {}\nBest test accuracy: {}".format(best_epoch, best_acc))
                 print("\n\nBest epoch: {}\nBest test loss: {}".format(best_epoch_loss, best_loss))
+                print("\n\nBest epoch: {}\nBest test f1: {}".format(best_epoch, best_f1))
 
 
 def str2bool(v):
@@ -423,7 +454,7 @@ if __name__ == "__main__":
 
     print(args)
 
-    batch_size = 20
+    batch_size = 50
     epochs = 100
     emotions = args.classes
     assert args.data in ['mosi', 'mosei', 'iemocap','cognimuse']
@@ -445,5 +476,5 @@ if __name__ == "__main__":
             u.encoding = 'latin1'
             unimodal_activations = u.load()
 
-    epochs = 50
-    multimodal(unimodal_activations, args.data, args.classes, args.fusion, args.attention_2, use_raw=args.use_raw)
+    #epochs = 50
+    #multimodal(unimodal_activations, args.data, args.classes, args.fusion, args.attention_2, use_raw=args.use_raw)
